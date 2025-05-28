@@ -1,0 +1,54 @@
+
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>スマート農業システム：メインページ</title>
+  <style>
+    body { font-family: sans-serif; background: #f5f5f5; text-align: center; padding: 2em; }
+    h1 { color: #333; }
+    .map-container {
+      position: relative;
+      display: inline-block;
+    }
+    .map-container img {
+      width: 600px;
+      height: auto;
+    }
+     .zone-link {
+    position: absolute;
+    display: block;
+    opacity: 0;
+    transition: background-color 0.3s ease;
+  }
+  .zone-link:hover {
+    opacity: 0.3;
+    background-color: yellow;
+    border: 2px solid orange;
+    cursor: pointer;
+  }
+  </style>
+</head>
+<body>
+
+<h1>🌱 スマート農業システム：ゾーン選択</h1>
+<p style="margin-top: 2em;">画像中のゾーンをクリックすると、それぞれの最新データページへ移動します。</p>
+
+<div class="map-container">
+  <img src="図/map_all.png" alt="ゾーン全体図">
+
+  <!-- 各ゾーンへの透明リンク -->
+  
+  <a href="zone1_today.html" class="zone-link" style="top: 115px; left: 310px; width: 150px; height: 95px;"></a>
+  <a href="zone2_today.html" class="zone-link" style="top: 115px; left: 155px; width: 150px; height: 95px;"></a>
+  <a href="zone3_today.html" class="zone-link" style="top: 115px; left: 0px; width: 150px; height: 95px;"></a>
+  <a href="zone4_today.html" class="zone-link" style="top: 350px; left: 155px; width: 150px; height: 90px;"></a>
+  <a href="zone5_today.html" class="zone-link" style="top: 350px; left: 0px; width: 150px; height: 90px;"></a>
+
+</div>
+
+
+
+</body>
+</html>
