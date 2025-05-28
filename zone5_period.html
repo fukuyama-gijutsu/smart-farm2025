@@ -1,0 +1,239 @@
+
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ゾーン5 スマート農業システム：期間別グラフ表示</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: sans-serif; background: #f9f9f9; padding: 2em; }
+    h1, h2 { color: #333; }
+    #controls { margin-bottom: 2em; }
+    label { margin-right: 1em; }
+    input[type="date"] { font-size: 1em; margin-right: 1em; }
+    button { font-size: 1em; padding: 0.4em 1em; }
+    .chart-wrapper {
+      overflow-x: auto;
+      padding-bottom: 1em;
+    }
+    canvas {
+      min-width: 1000px;
+      max-width: none;
+      height: auto;
+      background: white;
+      padding: 1em;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    #weatherBox { margin-bottom: 2em; }
+    #weatherTable { width: 100%; text-align: center; border-collapse: collapse; }
+    #weatherTable th, #weatherTable td { border: 1px solid #ccc; padding: 0.5em; }
+  </style>
+</head>
+<body>
+
+<h1>📈 ゾーン5　計測値：期間別グラフ表示</h1>
+
+<img src="図/map5.png" alt="圃場マップ" style="max-width: 10%; height: auto;">
+
+<div id="controls">
+  <label>開始日：<input type="date" id="startDate"></label>
+  <label>終了日：<input type="date" id="endDate"></label>
+  <button onclick="updateRangeGraphs()">グラフを表示</button>
+</div>
+
+<h2>🌤 指定期間の天気（福山市）</h2>
+<div id="weatherBox" style="display:none;">
+  <div id="weatherLoading">データ取得中です...</div>
+  <table id="weatherTable"></table>
+</div>
+
+<h2>🌡 温度（左）・湿度（右）</h2>
+※気温ではなく，BOX内の実測温度です。
+<div class="chart-wrapper"><canvas id="tempHumChart"></canvas></div>
+
+<h2>💧 土壌水分量</h2>
+<div class="chart-wrapper"><canvas id="moistureChart"></canvas></div>
+
+<h2>💡 光量 [lux]</h2>
+※測定できる最大値は約50,000[lux]です.<br>
+光量[lux]の目安は<a href=lux.html>こちら</a>から<br>
+<div class="chart-wrapper"><canvas id="lightChart"></canvas></div>
+
+<script>
+const apiUrlSensor = "https://script.google.com/macros/s/AKfycby_hf2fwl9Yby97_DLyViirpncSz78Qa3l32TJofja9SCJ_2k_jyHXAK8tJw2Kuguiq/exec?mode=sensor";
+const weatherDescriptions = {
+  0: "☀ 快晴", 1: "☀ 晴れ", 2: "🌤 一部曇り", 3: "☁ 曇り",
+  45: "🌫 霧", 51: "🌧 弱い霧雨", 61: "🌧 弱い雨", 63: "🌧 中程度の雨",
+  65: "🌧 強い雨", 80: "🌦 にわか雨", 95: "⛈ 雷雨"
+};
+
+let allData = [];
+
+fetch(apiUrlSensor)
+  .then(res => res.json())
+  .then(data => {
+    allData = data;
+  });
+
+let tempHumChart, moistureChart, lightChart;
+
+function updateRangeGraphs() {
+  const start = document.getElementById("startDate").value;
+  const end = document.getElementById("endDate").value;
+  if (!start || !end || start > end) {
+    alert("正しい日付を入力してください");
+    return;
+  }
+
+  updateWeatherTable(start, end);
+
+  const filtered = allData.filter(row => {
+    const raw = row["日時"] || row["日付"];
+    if (!raw) return false;
+    const d = new Date(raw);
+    const ymd = d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2, '0') + "-" + String(d.getDate()).padStart(2, '0');
+    return ymd >= start && ymd <= end;
+  });
+
+  if (filtered.length === 0) {
+    alert("指定された期間のデータがありません。");
+    return;
+  }
+
+  const labels = formatTimeLabels(filtered);
+  const temperature = filtered.map(row => parseFloat(row["温度[℃]"]));
+  const humidity = filtered.map(row => parseFloat(row["湿度[%]"]));
+  const moisture = filtered.map(row => parseFloat(row["水分量"]));
+  const light = filtered.map(row => parseFloat(row["光量[lux]"]));
+
+  if (tempHumChart) tempHumChart.destroy();
+  const ctx1 = document.getElementById("tempHumChart").getContext("2d");
+  tempHumChart = new Chart(ctx1, {
+    type: "line",
+    data: {
+      labels: labels,
+      datasets: [
+        { label: "温度[℃]", data: temperature, borderColor: "red", yAxisID: "y", tension: 0.3, fill: false },
+        { label: "湿度[%]", data: humidity, borderColor: "blue", yAxisID: "y2", tension: 0.3, fill: false }
+      ]
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: "index", intersect: false },
+      stacked: false,
+      scales: {
+        x: {
+          ticks: { autoSkip: true, maxRotation: 45, minRotation: 20 }
+        },
+        y: {
+          type: "linear",
+          position: "left",
+          title: { display: true, text: "温度[℃]" }
+        },
+        y2: {
+          type: "linear",
+          position: "right",
+          title: { display: true, text: "湿度[%]" },
+          grid: { drawOnChartArea: false }
+        }
+      }
+    }
+  });
+
+  if (moistureChart) moistureChart.destroy();
+  const ctx2 = document.getElementById("moistureChart").getContext("2d");
+  moistureChart = new Chart(ctx2, {
+    type: "line",
+    data: {
+      labels: labels,
+      datasets: [{ label: "土壌水分量", data: moisture, borderColor: "green", borderWidth: 2, tension: 0.3, fill: false }]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        x: {
+          ticks: { autoSkip: true, maxRotation: 45, minRotation: 20 }
+        },
+        y: {
+          min: 0,
+          max: 1000,
+          title: { display: true, text: "水分量" }
+        }
+      }
+    }
+  });
+
+  if (lightChart) lightChart.destroy();
+  const ctx3 = document.getElementById("lightChart").getContext("2d");
+  lightChart = new Chart(ctx3, {
+    type: "line",
+    data: {
+      labels: labels,
+      datasets: [{ label: "光量 [lux]", data: light, borderColor: "orange", borderWidth: 2, tension: 0.3, fill: false }]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        x: {
+          ticks: { autoSkip: true, maxRotation: 45, minRotation: 20 }
+        },
+        y: {
+          min: 0,
+          max: 50000,
+          title: { display: true, text: "光量 [lux]" }
+        }
+      }
+    }
+  });
+}
+
+function formatTimeLabels(data) {
+  return data.map(row => {
+    const raw = row["日時"] || row["日付"] + " " + row["時間"];
+    const dt = new Date(raw);
+    const month = dt.getMonth() + 1;
+    const date = dt.getDate();
+    const hour = dt.getHours().toString().padStart(2, '0');
+    const min = dt.getMinutes().toString().padStart(2, '0');
+    return `${month}/${date} ${hour}:${min}`;
+  });
+}
+
+function updateWeatherTable(start, end) {
+  document.getElementById("weatherLoading").style.display = "block";
+  const api = `https://api.open-meteo.com/v1/forecast?latitude=34.4859&longitude=133.3625&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTokyo&start_date=${start}&end_date=${end}`;
+  fetch(api)
+    .then(res => res.json())
+    .then(data => {
+      const dates = data.daily.time;
+      const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
+      const dateLabels = dates.map(d => {
+        const dt = new Date(d);
+        return `${d}（${weekdays[dt.getDay()]})`;
+      });
+      const weather = data.daily.weathercode.map(code => weatherDescriptions[code] || "不明");
+      const maxT = data.daily.temperature_2m_max;
+      const minT = data.daily.temperature_2m_min;
+      const rain = data.daily.precipitation_probability_max;
+
+      const table = document.getElementById("weatherTable");
+      table.innerHTML = `
+        <tr><th>項目＼日付</th>${dateLabels.map(d => `<th>${d}</th>`).join('')}</tr>
+        <tr><td>天気</td>${weather.map(w => `<td>${w}</td>`).join('')}</tr>
+        <tr><td>最高気温</td>${maxT.map(t => `<td>${t}℃</td>`).join('')}</tr>
+        <tr><td>最低気温</td>${minT.map(t => `<td>${t}℃</td>`).join('')}</tr>
+        <tr><td>降水確率</td>${rain.map(p => `<td>${p}%</td>`).join('')}</tr>
+      `;
+      document.getElementById("weatherBox").style.display = "block";
+      document.getElementById("weatherLoading").style.display = "none";
+    })
+    .catch(err => {
+      document.getElementById("weatherLoading").textContent = "天気データ取得に失敗しました";
+      console.error(err);
+    });
+}
+</script>
+</body>
+</html>

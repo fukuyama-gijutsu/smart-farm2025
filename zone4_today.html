@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ゾーン4　スマート農業システム</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: sans-serif; background: #f4f4f4; padding: 2em; }
+    h1, h2 { color: #333; }
+    #loading { font-weight: bold; color: gray; margin-bottom: 1em; }
+    #latestDataBox, #latestWeatherBox, #weatherBox {
+      background: white;
+      padding: 1em;
+      border-radius: 8px;
+      margin-bottom: 2em;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    table { width: 100%; border-collapse: collapse; }
+    td { padding: 0.5em; border-bottom: 1px solid #ddd; }
+    canvas {
+      max-width: 100%;
+      height: auto;
+      margin-bottom: 3em;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      padding: 1em;
+    }
+  </style>
+</head>
+<body>
+
+<h1>🌽 ゾーン4　スマート農業システム　計測値</h1> 
+期間ごとのデータ表示は<a href=zone4_period.html>こちら</a>から<br>
+
+<img src="図/map4.png" alt="圃場マップ" style="max-width: 10%; height: auto;">
+
+<div id="loading">データを読み込み中です...</div>
+
+<div id="latestDataBox" style="display:none;">
+  <h2>📋 最新の計測値</h2>
+  <table id="latestDataTable"></table>
+</div>
+
+<div id="weatherBox" style="display:none;">
+  <h2>🌤 今日の天気（福山市）</h2>
+  <table id="weatherTable"></table>
+</div>
+
+<h2>🌡 温度と湿度</h2>
+※気温ではなく，BOX内の実測温度です。
+<canvas id="tempHumChart"></canvas>
+
+<h2>💧 土壊水分量</h2>
+<canvas id="moistureChart"></canvas>
+
+<h2>💡 光量 [lux]</h2>
+※測定できる最大値は約50,000[lux]です.<br>
+光量[lux]の目安は<a href=lux.html>こちら</a>から<br>
+<canvas id="lightChart"></canvas>
+
+<script>
+const apiUrlSensor = "https://script.google.com/macros/s/AKfycbz2usvBSd85xczpPzpc0Uwf8s6DMixya2w23LoMJQQFG2OwGALhFf4gx4yN8vh03FHA/exec?mode=sensor";
+let tempHumChart, moistureChart, lightChart;
+
+fetch(apiUrlSensor)
+  .then(res => res.json())
+  .then(data => {
+    if (!data || data.length === 0) {
+      document.getElementById("loading").textContent = "データが見つかりません。";
+      return;
+    }
+
+    const now = new Date();
+    const nowTime = now.getTime();
+    const data24h = data.filter(row => {
+      const raw = row["日時"] || `${row["日付"]} ${row["時間"]}`;
+      const t = new Date(raw);
+      return nowTime - t.getTime() <= 24 * 60 * 60 * 1000;
+    });
+
+    if (data24h.length === 0) {
+      document.getElementById("loading").textContent = "24時間分のデータがありません。";
+      return;
+    }
+
+    const latest = data24h[data24h.length - 1];
+    const keysToShow = ["日付", "時間", "温度[℃]", "湿度[%]", "水分量", "光量[lux]"];
+    const table = document.getElementById("latestDataTable");
+    table.innerHTML = keysToShow.map(key => `
+      <tr>
+        <td><strong>${key}</strong></td>
+        <td>${latest[key] ?? "-"}</td>
+      </tr>
+    `).join("");
+    document.getElementById("latestDataBox").style.display = "block";
+
+    const labels = data24h.map(row => {
+      const raw = row["日時"] || `${row["日付"]} ${row["時間"]}`;
+      const dt = new Date(raw);
+      return dt.getHours().toString().padStart(2, '0') + ":" + dt.getMinutes().toString().padStart(2, '0');
+    });
+
+    const temperature = data24h.map(row => parseFloat(row["温度[℃]"]));
+    const humidity = data24h.map(row => parseFloat(row["湿度[%]"]));
+    const moisture = data24h.map(row => parseFloat(row["水分量"]));
+    const light = data24h.map(row => parseFloat(row["光量[lux]"]));
+
+    const ctx1 = document.getElementById("tempHumChart").getContext("2d");
+    tempHumChart = new Chart(ctx1, {
+      type: "line",
+      data: {
+        labels: labels,
+        datasets: [
+          { label: "温度[℃]", data: temperature, borderColor: "red", yAxisID: "y", tension: 0.3, fill: false },
+          { label: "湿度[%]", data: humidity, borderColor: "blue", yAxisID: "y2", tension: 0.3, fill: false }
+        ]
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: "index", intersect: false },
+        stacked: false,
+        scales: {
+          y: {
+            type: "linear",
+            position: "left",
+            title: { display: true, text: "温度[℃]" },
+            min: 10,
+            max: 50
+          },
+          y2: {
+            type: "linear",
+            position: "right",
+            title: { display: true, text: "湿度[%]" },
+            grid: { drawOnChartArea: false }
+          }
+        }
+      }
+    });
+
+    const ctx2 = document.getElementById("moistureChart").getContext("2d");
+    moistureChart = new Chart(ctx2, {
+      type: "line",
+      data: {
+        labels: labels,
+        datasets: [
+          { label: "土壌水分量", data: moisture, borderColor: "green", borderWidth: 2, tension: 0.3, fill: false }
+        ]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: { min: 0, max: 1000, title: { display: true, text: "水分量" } }
+        }
+      }
+    });
+
+    const ctx3 = document.getElementById("lightChart").getContext("2d");
+    lightChart = new Chart(ctx3, {
+      type: "line",
+      data: {
+        labels: labels,
+        datasets: [
+          { label: "光量 [lux]", data: light, borderColor: "orange", borderWidth: 2, tension: 0.3, fill: false }
+        ]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: { min: 0, max: 50000, title: { display: true, text: "光量 [lux]" } }
+        }
+      }
+    });
+
+    document.getElementById("loading").style.display = "none";
+  })
+  .catch(err => {
+    document.getElementById("loading").textContent = "データ取得に失敗しました。";
+    console.error("データ取得エラー:", err);
+  });
+
+// ▼ Open-Meteo API を使って天気を取得
+const latitude = 34.4859;
+const longitude = 133.3625;
+const weatherApi = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTokyo`;
+const weatherDescriptions = {
+  0: "快晴 ☀",
+  1: "晴れ ☀",
+  2: "一部曇り 🌤",
+  3: "曇り ☁",
+  45: "霧 🌫",
+  51: "弱い霧雨 🌧",
+  61: "弱い雨 🌧",
+  63: "中程度の雨 🌧",
+  65: "強い雨 🌧",
+  80: "にわか雨 🌦",
+  95: "雷雨 ⛈",
+};
+
+fetch(weatherApi)
+  .then(res => res.json())
+  .then(data => {
+    const todayIndex = 0;
+    const code = data.daily.weathercode[todayIndex];
+    const maxT = data.daily.temperature_2m_max[todayIndex];
+    const minT = data.daily.temperature_2m_min[todayIndex];
+    const rain = data.daily.precipitation_probability_max[todayIndex];
+
+    const desc = weatherDescriptions[code] || "不明";
+
+    const table = document.getElementById("weatherTable");
+    table.innerHTML = `
+      <tr><td><strong>天気</strong></td><td>${desc}</td></tr>
+      <tr><td><strong>最高気温</strong></td><td>${maxT} ℃</td></tr>
+      <tr><td><strong>最低気温</strong></td><td>${minT} ℃</td></tr>
+      <tr><td><strong>降水確率</strong></td><td>${rain} %</td></tr>
+    `;
+    document.getElementById("weatherBox").style.display = "block";
+
+    // 日付を表示（今日）
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日`;
+    const heading = document.querySelector('#weatherBox h2');
+    if (heading) heading.textContent += `（${dateStr}）`;
+  })
+  .catch(err => {
+    console.error("天気データ取得失敗:", err);
+  });
+</script>
+
+</body>
+</html>
